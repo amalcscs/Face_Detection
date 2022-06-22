@@ -1,65 +1,81 @@
-import face_recognition
-import imutils
-import pickle
-import time
 import cv2
+import numpy as np
+import face_recognition
 import os
+from datetime import datetime
+# from PIL import ImageGrab
  
-#find path of xml file containing haarcascade file
-cascPathface = os.path.dirname(
- cv2.__file__) + "/data/haarcascade_frontalface_alt2.xml"
-# load the harcaascade in the cascade classifier
-faceCascade = cv2.CascadeClassifier(cascPathface)
-# load the known faces and embeddings saved in last file
-data = pickle.loads(open('face_enc', "rb").read())
-#Find path to the image you want to detect face and pass it here
-image = cv2.imread(Path-to-img)
-rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-#convert image to Greyscale for haarcascade
-gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-faces = faceCascade.detectMultiScale(gray,
-                                     scaleFactor=1.1,
-                                     minNeighbors=5,
-                                     minSize=(60, 60),
-                                     flags=cv2.CASCADE_SCALE_IMAGE)
+path = 'c:\\users\\amal\\downloads\\amal'
+images = []
+classNames = []
+myList = os.listdir(path)
+print(myList)
+for cl in myList:
+    curImg = cv2.imread(f'{path}/{cl}')
+    images.append(curImg)
+    classNames.append(os.path.splitext(cl)[0])
+print(classNames)
  
-# the facial embeddings for face in input
-encodings = face_recognition.face_encodings(rgb)
-names = []
-# loop over the facial embeddings incase
-# we have multiple embeddings for multiple fcaes
-for encoding in encodings:
-    #Compare encodings with encodings in data["encodings"]
-    #Matches contain array with boolean values and True for the embeddings it matches closely
-    #and False for rest
-    matches = face_recognition.compare_faces(data["encodings"],
-    encoding)
-    #set name =inknown if no encoding matches
-    name = "Unknown"
-    # check to see if we have found a match
-    if True in matches:
-        #Find positions at which we get True and store them
-        matchedIdxs = [i for (i, b) in enumerate(matches) if b]
-        counts = {}
-        # loop over the matched indexes and maintain a count for
-        # each recognized face face
-        for i in matchedIdxs:
-            #Check the names at respective indexes we stored in matchedIdxs
-            name = data["names"][i]
-            #increase count for the name we got
-            counts[name] = counts.get(name, 0) + 1
-            #set name which has highest count
-            name = max(counts, key=counts.get)
+def findEncodings(images):
+    encodeList = []
+    for img in images:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        encode = face_recognition.face_encodings(img)[0]
+        encodeList.append(encode)
+    return encodeList
  
+def markAttendance(name):
+    with open('Attendance.csv','r+') as f:
+        myDataList = f.readlines()
+        nameList = []
+        for line in myDataList:
+            entry = line.split(',')
+            nameList.append(entry[0])
+        if name not in nameList:
+            now = datetime.now()
+            dtString = now.strftime('%H:%M:%S')
+            f.writelines(f'\n{name},{dtString}')
  
-        # update the list of names
-        names.append(name)
-        # loop over the recognized faces
-        for ((x, y, w, h), name) in zip(faces, names):
-            # rescale the face coordinates
-            # draw the predicted face name on the image
-            cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            cv2.putText(image, name, (x, y), cv2.FONT_HERSHEY_SIMPLEX,
-             0.75, (0, 255, 0), 2)
-    cv2.imshow("Frame", image)
-    cv2.waitKey(0)
+#### FOR CAPTURING SCREEN RATHER THAN WEBCAM
+# def captureScreen(bbox=(300,300,690+300,530+300)):
+#     capScr = np.array(ImageGrab.grab(bbox))
+#     capScr = cv2.cvtColor(capScr, cv2.COLOR_RGB2BGR)
+#     return capScr
+ 
+encodeListKnown = findEncodings(images)
+print('Encoding Complete')
+ 
+cap = cv2.VideoCapture(0)
+ 
+while True:
+    success, img = cap.read()
+    #img = captureScreen()
+    # imgS = cv2.resize(img,(1400, 1000), interpolation=cv2.INTER_AREA)
+    try:
+        imgS = cv2.resize(img, (1400, 1000), interpolation=cv2.INTER_AREA)
+        print(imgS.shape)
+    except:
+        break
+    imgS = cv2.cvtColor(imgS, cv2.COLOR_BGR2RGB)
+ 
+    facesCurFrame = face_recognition.face_locations(imgS)
+    encodesCurFrame = face_recognition.face_encodings(imgS,facesCurFrame)
+ 
+    for encodeFace,faceLoc in zip(encodesCurFrame,facesCurFrame):
+        matches = face_recognition.compare_faces(encodeListKnown,encodeFace)
+        faceDis = face_recognition.face_distance(encodeListKnown,encodeFace)
+        #print(faceDis)
+        matchIndex = np.argmin(faceDis)
+ 
+        if matches[matchIndex]:
+            name = classNames[matchIndex].upper()
+            #print(name)
+            y1,x2,y2,x1 = faceLoc
+            y1, x2, y2, x1 = y1*4,x2*4,y2*4,x1*4
+            cv2.rectangle(img,(x1,y1),(x2,y2),(0,255,0),2)
+            cv2.rectangle(img,(x1,y2-35),(x2,y2),(0,255,0),cv2.FILLED)
+            cv2.putText(img,name,(x1+6,y2-6),cv2.FONT_HERSHEY_COMPLEX,1,(255,255,255),2)
+            markAttendance(name)
+ 
+    cv2.imshow('Webcam',img)
+    cv2.waitKey(1)
